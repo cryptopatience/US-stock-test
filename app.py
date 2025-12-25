@@ -1237,4 +1237,4 @@ with tab7:
 # 푸터
 st.markdown("---")
 st.caption(f"마지막 업데이트: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-st.caption("데이터 출처: Yahoo Finance | 분석 기준: Anchored VWAP | AI: OpenAI GPT-4, Google Gemini
+st.caption("데이터 출처: Yahoo Finance | 분석 기준: Anchored VWAP | AI: OpenAI GPT-4, Google Gemini)
