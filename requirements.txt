@@ -35,3 +35,5 @@ wheel
 
 #위키피디아 HTML 표 읽기
 lxml
+
+requests
