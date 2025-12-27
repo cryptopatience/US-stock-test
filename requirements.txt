@@ -32,3 +32,6 @@ pytz>=2023.3
 # setuptools 추가 (Python 3.13 호환성)
 setuptools>=65.0.0
 wheel
+
+#위키피디아 HTML 표 읽기
+lxml
