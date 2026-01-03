@@ -1035,6 +1035,18 @@ with st.spinner("📊 Anchored VWAP 분석 중..."):
     progress_bar.empty()
 
 df_results = pd.DataFrame(results)
+# [수정된 부분] 데이터가 비어있는지 확인하는 방어 코드 추가
+if df_results.empty:
+    st.error("❌ 데이터를 불러오지 못했습니다.")
+    st.warning("""
+    **가능한 원인:**
+    1. Yahoo Finance API가 일시적으로 요청을 차단했습니다 (Rate Limit).
+    2. 인터넷 연결이 불안정합니다.
+    3. 수집된 종목 리스트가 비어있습니다.
+    
+    잠시 후 '데이터 새로고침' 버튼을 눌러 다시 시도해주세요.
+    """)
+    st.stop() # 더 이상 코드를 실행하지 않고 멈춤
 df_results['Buy_Signal_Score'] = df_results.apply(calculate_buy_score, axis=1)
 
 above_vwap_stocks = df_results[df_results['Is_Above_VWAP'] == True].copy()
