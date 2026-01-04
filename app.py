@@ -93,13 +93,26 @@ with st.sidebar:
 # ==================== 유틸리티 함수 ====================
 @st.cache_data(ttl=3600)
 def get_current_quarter_start():
-    """현재 분기 시작일 계산"""
+    """현재 분기 시작일 계산 (최소 5거래일 이상 보장)"""
     now = datetime.now()
-    quarter = (now.month - 1) // 3
-    quarter_start_month = quarter * 3 + 1
-    quarter_start = datetime(now.year, quarter_start_month, 1)
-    return quarter_start
+    
+    # 현재 분기 시작일 계산
+    current_quarter_start_month = ((now.month - 1) // 3) * 3 + 1
+    current_quarter_start_date = datetime(now.year, current_quarter_start_month, 1)
 
+    # 현재 날짜로부터 현재 분기 시작일까지의 일수 계산
+    days_since_quarter_start = (now - current_quarter_start_date).days
+
+    # 현재 분기가 시작된 지 5일 미만이면 이전 분기 사용
+    if days_since_quarter_start < 5: 
+        if current_quarter_start_month == 1:  # Q1인 경우, 전년도 Q4
+            quarter_start_to_use = datetime(now.year - 1, 10, 1)
+        else:  # Q2, Q3, Q4인 경우
+            quarter_start_to_use = datetime(now.year, current_quarter_start_month - 3, 1)
+    else:  # 현재 분기가 5일 이상 진행되었으면 현재 분기 사용
+        quarter_start_to_use = current_quarter_start_date
+        
+    return quarter_start_to_use
 
 @st.cache_data(ttl=3600)
 def get_top_30_tickers():
@@ -178,8 +191,7 @@ def get_quarterly_vwap_analysis(ticker):
     try:
         quarter_start = get_current_quarter_start()
         end_date = datetime.now()
-        quarter_num = (quarter_start.month - 1) // 3 + 1
-        
+                
         stock = yf.Ticker(ticker)
         df = stock.history(start=quarter_start, end=end_date)
         
@@ -207,7 +219,8 @@ def get_quarterly_vwap_analysis(ticker):
         
         quarter_start_price = df['Close'].iloc[0]
         quarter_return = ((current_price - quarter_start_price) / quarter_start_price * 100)
-        
+        # 분기 번호 계산 (quarter_start 기준) ← 여기로 이동
+        quarter_num = (quarter_start.month - 1) // 3 + 1
         return {
             'Ticker': ticker,
             'Company': company_name,
@@ -313,12 +326,16 @@ def get_comprehensive_analysis(ticker):
             "영업이익률": safe_get('operatingMargins', default='N/A', multiplier=100, format_str="{:.2f}%"),
             "순이익률": safe_get('profitMargins', default='N/A', multiplier=100, format_str="{:.2f}%"),
             "부채비율": f"{safe_get('debtToEquity', 0):.2f}%" if safe_get('debtToEquity') != 'N/A' else "N/A",
+            "부채비율": f"{safe_get('debtToEquity', 0):.2f}%" if safe_get('debtToEquity') != 'N/A' else "N/A",
+            "유동비율": f"{safe_get('currentRatio', 0):.2f}" if safe_get('currentRatio') != 'N/A' else "N/A",  # ← 추가
             "매출성장률": safe_get('revenueGrowth', default='N/A', multiplier=100, format_str="{:.2f}%"),
             "이익성장률": safe_get('earningsGrowth', default='N/A', multiplier=100, format_str="{:.2f}%"),
             "배당수익률": safe_get('dividendYield', default='N/A', multiplier=100, format_str="{:.2f}%"),
+            "배당성향": safe_get('payoutRatio', default='N/A', multiplier=100, format_str="{:.2f}%"),  # ← 추가
             "투자의견": recommendation_kr,
             "목표주가": f"${target_price:.2f}" if target_price else "N/A",
-            "상승여력": upside
+            "상승여력": upside,
+            "애널리스트수": safe_get('numberOfAnalystOpinions', default='N/A')  # ← 추가                
         }
     except Exception as e:
         return {"Error": f"분석 실패: {str(e)}"}
@@ -619,6 +636,9 @@ def get_gemini_market_analysis(market_data):
         
     except Exception as e:
         return f"❌ Gemini AI 분석 실패: {str(e)}\n\n힌트: 모델명 'gemini-2.5-flash' 또는 'gemini-1.5-flash'를 확인하세요."
+
+
+
 
 def get_openai_stock_analysis(ticker, stock_data, fundamental_data):
     """OpenAI를 활용한 개별 종목 분석"""
@@ -983,6 +1003,11 @@ with st.sidebar:
     - 분기 시작일부터 누적된 거래량 가중 평균 가격
     - VWAP 위: 기관/대량 매수세 우위
     - VWAP 아래: 약세 구간
+
+     **분기 시작일 계산 로직**  # ← 이 부분 추가
+    - 현재 분기 시작 후 5일 미만: 이전 분기 사용
+    - 현재 분기 시작 후 5일 이상: 현재 분기 사용
+    - 최소 5거래일 이상 보장    
     """)
     
     # AI 상태 표시
@@ -1016,6 +1041,9 @@ st.info(f"""
 - 분기: {quarter_start.year} Q{quarter_num}  
 - Anchor Point: {quarter_start.strftime('%Y-%m-%d')}  
 - 경과일: {(datetime.now() - quarter_start).days}일
+- 거래일 수: 약 {(datetime.now() - quarter_start).days // 7 * 5}일 (추정)  
+- Score 산식(요약): Above_VWAP_Days_%(추세 지속성) + Price_vs_VWAP_%(위치) + Uptrend_Strength_%(추세 품질) + Volume_Ratio(수급) + Quarter_Return_%(성과)
+- 점수 구간: 80+ Strong Buy / 60–79 Buy(Breakout or Dip) / <60 Hold·Sell
 """)
 
 # 데이터 수집
@@ -1344,21 +1372,39 @@ with tab5:
     
     else:  # 개별 종목 분석
         if st.session_state.get('openai_show_stock_selector', False):
-            selected_ticker = st.selectbox(
-                "분석할 종목 선택",
-                above_vwap_stocks['Ticker'].tolist(),
-                key="openai_stock_selector"
-            )
-            
-            if st.button("🔍 선택 종목 분석", type="primary"):
-                with st.spinner(f"🤖 OpenAI가 {selected_ticker}를 분석하고 있습니다..."):
-                    # 종목 데이터 준비
-                    stock_data = above_vwap_stocks[above_vwap_stocks['Ticker'] == selected_ticker].iloc[0].to_dict()
-                    fundamental_data = get_comprehensive_analysis(selected_ticker)
-                    
-                    analysis_result = get_openai_stock_analysis(selected_ticker, stock_data, fundamental_data)
-                    st.session_state[f'openai_stock_analysis_{selected_ticker}'] = analysis_result
+             # 종목 필터 선택 추가
+             stock_filter = st.radio(
+                 "종목 필터",
+                 ["✅ VWAP 위 종목만", "⚠️ VWAP 아래 종목만", "📊 전체 종목"],
+                 horizontal=True,
+                 key="openai_stock_filter"
+             )
+    
+             # 필터링 로직
+             if stock_filter == "✅ VWAP 위 종목만":
+                 available_stocks = above_vwap_stocks
+             elif stock_filter == "⚠️ VWAP 아래 종목만":
+                 available_stocks = below_vwap_stocks
+             else:  # 전체 종목
+                 available_stocks = df_results.sort_values('Buy_Signal_Score', ascending=False)
+    
+             selected_ticker = st.selectbox(
+                 "분석할 종목 선택",
+                 available_stocks['Ticker'].tolist(),
+                 key="openai_stock_selector"
+             )
+    
+             if st.button("🔍 선택 종목 분석", type="primary"):
+                 with st.spinner(f"🤖 OpenAI가 {selected_ticker}를 분석하고 있습니다..."):
+                     # 종목 데이터 준비 (VWAP 아래 종목도 처리)
+                 stock_data = df_results[df_results['Ticker'] == selected_ticker].iloc[0].to_dict()
+                 fundamental_data = get_comprehensive_analysis(selected_ticker)
+                 analysis_result = get_openai_stock_analysis(selected_ticker, stock_data, fundamental_data)
+                 st.session_state[f'openai_stock_analysis_{selected_ticker}'] = analysis_result
         
+        
+        
+              
         # 분석 결과 표시
         for key in list(st.session_state.keys()):
             if key.startswith('openai_stock_analysis_'):
@@ -1427,20 +1473,38 @@ with tab6:
     
     else:  # 개별 종목 분석
         if st.session_state.get('gemini_show_stock_selector', False):
+            # 종목 필터 선택 추가
+            stock_filter_gemini = st.radio(
+                "종목 필터",
+                ["✅ VWAP 위 종목만", "⚠️ VWAP 아래 종목만", "📊 전체 종목"],
+                horizontal=True,
+                key="gemini_stock_filter"
+            )
+    
+            # 필터링 로직
+            if stock_filter_gemini == "✅ VWAP 위 종목만":
+                available_stocks_gemini = above_vwap_stocks
+            elif stock_filter_gemini == "⚠️ VWAP 아래 종목만":
+                available_stocks_gemini = below_vwap_stocks
+            else:  # 전체 종목
+                available_stocks_gemini = df_results.sort_values('Buy_Signal_Score', ascending=False)
+    
             selected_ticker_gemini = st.selectbox(
                 "분석할 종목 선택",
-                above_vwap_stocks['Ticker'].tolist(),
+                available_stocks_gemini['Ticker'].tolist(),
                 key="gemini_stock_selector"
             )
-            
+    
             if st.button("🔍 선택 종목 분석", type="primary", key="gemini_stock_analyze"):
                 with st.spinner(f"🧠 Gemini AI가 {selected_ticker_gemini}를 분석하고 있습니다..."):
-                    stock_data = above_vwap_stocks[above_vwap_stocks['Ticker'] == selected_ticker_gemini].iloc[0].to_dict()
+                    # 종목 데이터 준비 (VWAP 아래 종목도 처리)
+                    stock_data = df_results[df_results['Ticker'] == selected_ticker_gemini].iloc[0].to_dict()
                     fundamental_data = get_comprehensive_analysis(selected_ticker_gemini)
-                    
+            
                     analysis_result = get_gemini_stock_analysis(selected_ticker_gemini, stock_data, fundamental_data)
                     st.session_state[f'gemini_stock_analysis_{selected_ticker_gemini}'] = analysis_result
         
+       
         # 분석 결과 표시
         for key in list(st.session_state.keys()):
             if key.startswith('gemini_stock_analysis_'):
@@ -1706,6 +1770,11 @@ with tab8:
     
     st.markdown("""
     ### 💡 투자 전략
+    **📍 분기 정보**  # ← 이 섹션 전체 추가
+    - 현재 분기: {quarter_start.year} Q{quarter_num}
+    - Anchor Point: {quarter_start.strftime('%Y-%m-%d')}
+    - 경과일: {(datetime.now() - quarter_start).days}일
+    - 거래일 (추정): 약 {(datetime.now() - quarter_start).days // 7 * 5}일
     
     **1. 💚 강력 매수 (80점 이상)**
     - 현재가가 Anchored VWAP 위에서 안정적
@@ -1730,6 +1799,11 @@ with tab8:
     - ROE > 15%: 우수한 수익성
     - 부채비율 < 100%: 안정적 재무구조
     - 월가 컨센서스 '매수' 이상 권장
+
+    **6. 🎯 분기말 효과 고려사항**  # ← 이 항목 추가
+    - 분기 초반 (거래일 < 20일): 데이터 불안정, 신중한 접근
+    - 분기 중반 (거래일 20-40일): 가장 신뢰도 높은 구간
+    - 분기 말 (거래일 > 40일): Window dressing 효과 주의    
     """)
     
     st.markdown("---")
@@ -1752,3 +1826,4 @@ with tab8:
 st.markdown("---")
 st.caption(f"마지막 업데이트: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 st.caption("데이터 출처: Yahoo Finance | 분석 기준: Anchored VWAP | AI: OpenAI GPT-4, Google Gemini")
+st.caption(f"분기 시작일 계산: 최소 5거래일 보장 로직 적용")  # ← 추가
