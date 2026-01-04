@@ -1039,6 +1039,9 @@ st.info(f"""
 - Anchor Point: {quarter_start.strftime('%Y-%m-%d')}  
 - 경과일: {(datetime.now() - quarter_start).days}일
 - 거래일 수: 약 {(datetime.now() - quarter_start).days // 7 * 5}일 (추정)  # ← 추가
+Score 산식(요약):
+Above_VWAP_Days_%(추세 지속성) + Price_vs_VWAP_%(위치) + Uptrend_Strength_%(추세 품질) + Volume_Ratio(수급) + Quarter_Return_%(성과)
+점수 구간: 80+ Strong Buy / 60–79 Buy(Breakout or Dip) / <60 Hold·Sell
 """)
 
 # 데이터 수집
