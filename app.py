@@ -187,15 +187,17 @@ def calculate_anchored_vwap(df):
 
 @st.cache_data(ttl=1800)
 def get_quarterly_vwap_analysis(ticker):
-    """분기별 Anchored VWAP 분석"""
+    """분기별 Anchored VWAP 분석 (수정됨: 최소 거래일 제한 완화)"""
     try:
         quarter_start = get_current_quarter_start()
         end_date = datetime.now()
                 
         stock = yf.Ticker(ticker)
-        df = stock.history(start=quarter_start, end=end_date)
+        # auto_adjust=True로 설정하여 수정주가 반영
+        df = stock.history(start=quarter_start, end=end_date, auto_adjust=True)
         
-        if df.empty or len(df) < 5:
+        # [수정 핵심] 분기 초반에는 거래일이 적으므로 제한을 5일 -> 1일로 완화
+        if df.empty or len(df) < 1: 
             return None
         
         df = calculate_anchored_vwap(df)
@@ -203,13 +205,15 @@ def get_quarterly_vwap_analysis(ticker):
         current_price = df['Close'].iloc[-1]
         current_vwap = df['Anchored_VWAP'].iloc[-1]
         above_vwap_ratio = (df['Close'] > df['Anchored_VWAP']).sum() / len(df) * 100
-        recent_5days_avg = df['Close'].tail(5).mean()
-        recent_10days_avg = df['Close'].tail(10).mean()
+        
+        # 이동평균 계산 시 데이터 부족 예외 처리
+        recent_5days_avg = df['Close'].tail(5).mean() if len(df) >= 5 else df['Close'].mean()
+        recent_10days_avg = df['Close'].tail(10).mean() if len(df) >= 10 else df['Close'].mean()
         
         recent_20 = df['Close'].tail(min(20, len(df)))
         uptrend_strength = (recent_20.diff() > 0).sum() / len(recent_20) * 100 if len(recent_20) > 1 else 50
         
-        recent_volume = df['Volume'].tail(5).mean()
+        recent_volume = df['Volume'].tail(5).mean() if len(df) >= 5 else df['Volume'].mean()
         avg_volume = df['Volume'].mean()
         volume_ratio = recent_volume / avg_volume if avg_volume > 0 else 1
         
@@ -219,8 +223,9 @@ def get_quarterly_vwap_analysis(ticker):
         
         quarter_start_price = df['Close'].iloc[0]
         quarter_return = ((current_price - quarter_start_price) / quarter_start_price * 100)
-        # 분기 번호 계산 (quarter_start 기준) ← 여기로 이동
+        
         quarter_num = (quarter_start.month - 1) // 3 + 1
+        
         return {
             'Ticker': ticker,
             'Company': company_name,
@@ -241,7 +246,8 @@ def get_quarterly_vwap_analysis(ticker):
             'Is_Above_VWAP': current_price > current_vwap
         }
     except Exception as e:
-        st.warning(f"Error processing {ticker}: {str(e)}")
+        # 에러 로그를 출력하여 디버깅 용이하게 함
+        print(f"Error processing {ticker}: {str(e)}")
         return None
 
 def calculate_buy_score(row):
